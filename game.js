@@ -20,17 +20,10 @@ const player = {
     x: width / 2,
     y: height / 2,
     size: 20,
-    speedBase: 5, // Original speed
-    speed: 5, // Current speed (can be boosted)
-    speedBoostActive: false,
-    speedBoostDuration: 2000, // Duration in ms
-    speedBoostCooldown: 5000, // Cooldown in ms
-    speedBoostTimer: 0,
-    speedBoostLastUsed: -5000, // Initialize to allow immediate use
+    speed: 5,
 };
 
 const enemies = [];
-const shockwaves = []; // Array to hold active shockwaves
 
 const keys = {};
 
@@ -99,18 +92,15 @@ function lockChangeAlert() {
     }
 }
 
-let mouseSensitivity = 0.1;
+let mouseMovement = { x: 0, y: 0 };
 
 function updateMousePosition(e) {
-    // Move player based on mouse movement
-    player.x += e.movementX * player.speed;
-    player.y += e.movementY * player.speed;
-
-    // Keep player within canvas boundaries
-    player.x = Math.max(player.size / 2, Math.min(width - player.size / 2, player.x));
-    player.y = Math.max(player.size / 2, Math.min(height - player.size / 2, player.y));
+    // Accumulate mouse movement
+    mouseMovement.x += e.movementX;
+    mouseMovement.y += e.movementY;
 }
 
+// Function to spawn enemies
 function spawnEnemy() {
     const enemySize = 20;
     const enemySpeed = 1 + Math.random() * 2;
@@ -144,37 +134,106 @@ function spawnEnemy() {
     });
 }
 
-function activateSpeedBoost() {
-    const currentTime = Date.now();
-    if (!player.speedBoostActive && (currentTime - player.speedBoostLastUsed) >= player.speedBoostCooldown) {
-        player.speedBoostActive = true;
-        player.speed = player.speedBase * 2; // Double the speed
-        player.speedBoostTimer = currentTime;
-        player.speedBoostLastUsed = currentTime;
+// Combo Mechanic Variables
+let comboCooldown = 2000; // 2 seconds cooldown
+let lastComboTime = 0;
 
-        // Create a shockwave effect
-        shockwaves.push({
-            x: player.x,
-            y: player.y,
-            radius: 0,
-            maxRadius: 100,
-            opacity: 0.5,
-        });
+// Function to trigger combo effect
+function triggerCombo() {
+    const currentTime = Date.now();
+    if ((currentTime - lastComboTime) < comboCooldown) {
+        return; // Combo is on cooldown
     }
+
+    // Determine the direction based on combined mouse and keyboard inputs
+    let keyboardDirection = { x: 0, y: 0 };
+    if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
+        keyboardDirection.x -= 1;
+    }
+    if (keys['ArrowRight'] || keys['d'] || keys['D']) {
+        keyboardDirection.x += 1;
+    }
+    if (keys['ArrowUp'] || keys['w'] || keys['W']) {
+        keyboardDirection.y -= 1;
+    }
+    if (keys['ArrowDown'] || keys['s'] || keys['S']) {
+        keyboardDirection.y += 1;
+    }
+
+    // Normalize keyboard direction
+    let keyboardLength = Math.hypot(keyboardDirection.x, keyboardDirection.y);
+    if (keyboardLength > 0) {
+        keyboardDirection.x /= keyboardLength;
+        keyboardDirection.y /= keyboardLength;
+    }
+
+    // Determine mouse direction
+    let mouseDirection = { x: 0, y: 0 };
+    if (mouseMovement.x !== 0 || mouseMovement.y !== 0) {
+        let mouseLength = Math.hypot(mouseMovement.x, mouseMovement.y);
+        mouseDirection.x = mouseMovement.x / mouseLength;
+        mouseDirection.y = mouseMovement.y / mouseLength;
+    }
+
+    // Calculate the angle between keyboard and mouse directions
+    let dotProduct = (keyboardDirection.x * mouseDirection.x) + (keyboardDirection.y * mouseDirection.y);
+    let angle = Math.acos(dotProduct > 1 ? 1 : (dotProduct < -1 ? -1 : dotProduct));
+
+    const angleThreshold = Math.PI / 4; // 45 degrees
+
+    if (angle < angleThreshold) {
+        // Directions are similar; trigger combo
+        lastComboTime = currentTime;
+
+        // Find and remove enemies within proximity
+        const proximityRadius = 100;
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            const enemy = enemies[i];
+            const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+            if (dist <= proximityRadius) {
+                enemies.splice(i, 1); // Destroy the enemy
+            } else {
+                // Push back the enemy
+                const pushDistance = 20;
+                const angleToPlayer = Math.atan2(enemy.y - player.y, enemy.x - player.x);
+                enemy.x += Math.cos(angleToPlayer) * pushDistance;
+                enemy.y += Math.sin(angleToPlayer) * pushDistance;
+
+                // Ensure enemies stay within bounds
+                enemy.x = Math.max(enemy.size / 2, Math.min(width - enemy.size / 2, enemy.x));
+                enemy.y = Math.max(enemy.size / 2, Math.min(height - enemy.size / 2, enemy.y));
+            }
+        }
+
+        // Visual Feedback (optional): Flash the screen or show an effect
+        // Here, we'll create a brief flash effect
+        flashScreen();
+    }
+
+    // Reset mouse movement after checking
+    mouseMovement.x = 0;
+    mouseMovement.y = 0;
 }
 
-function updateShockwaves(deltaTime) {
-    for (let i = shockwaves.length - 1; i >= 0; i--) {
-        const shockwave = shockwaves[i];
-        shockwave.radius += 100 * (deltaTime / 1000); // Expand at 100 pixels per second
-        shockwave.opacity -= 0.5 * (deltaTime / 1000); // Fade out over time
+// Function to create a flash effect upon combo
+let flash = { active: false, opacity: 0 };
 
-        if (shockwave.radius >= shockwave.maxRadius || shockwave.opacity <= 0) {
-            shockwaves.splice(i, 1); // Remove shockwave
+function flashScreen() {
+    flash.active = true;
+    flash.opacity = 0.5; // Initial opacity
+}
+
+function updateFlash(deltaTime) {
+    if (flash.active) {
+        flash.opacity -= 1 * (deltaTime / 1000); // Fade out over 0.5 seconds
+        if (flash.opacity <= 0) {
+            flash.active = false;
+            flash.opacity = 0;
         }
     }
 }
 
+// Function to update game state
 let lastUpdateTime = Date.now();
 
 function update() {
@@ -187,39 +246,28 @@ function update() {
     lastUpdateTime = currentTime;
 
     // Update player position based on keyboard input
-    let movingWithKeyboard = false;
     let keyboardDirection = { x: 0, y: 0 };
-
     if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
         keyboardDirection.x -= 1;
-        movingWithKeyboard = true;
     }
     if (keys['ArrowRight'] || keys['d'] || keys['D']) {
         keyboardDirection.x += 1;
-        movingWithKeyboard = true;
     }
     if (keys['ArrowUp'] || keys['w'] || keys['W']) {
         keyboardDirection.y -= 1;
-        movingWithKeyboard = true;
     }
     if (keys['ArrowDown'] || keys['s'] || keys['S']) {
         keyboardDirection.y += 1;
-        movingWithKeyboard = true;
     }
 
-    // Normalize direction
-    if (keyboardDirection.x !== 0 || keyboardDirection.y !== 0) {
-        const length = Math.hypot(keyboardDirection.x, keyboardDirection.y);
+    // Normalize keyboard direction
+    let length = Math.hypot(keyboardDirection.x, keyboardDirection.y);
+    if (length > 0) {
         keyboardDirection.x /= length;
         keyboardDirection.y /= length;
 
         player.x += keyboardDirection.x * player.speed;
         player.y += keyboardDirection.y * player.speed;
-
-        // Detect if both keyboard and mouse are used simultaneously
-        if (isPointerLocked && movingWithKeyboard) {
-            activateSpeedBoost();
-        }
     }
 
     // Keep player within canvas boundaries
@@ -238,6 +286,15 @@ function update() {
         player.x = Math.max(player.size / 2, Math.min(width - player.size / 2, player.x));
         player.y = Math.max(player.size / 2, Math.min(height - player.size / 2, player.y));
     }
+
+    // Move player based on mouse movement
+    if (isPointerLocked) {
+        // Mouse movement is already handled in the updateMousePosition function
+        // Player position has been updated accordingly
+    }
+
+    // Detect and trigger combo
+    triggerCombo();
 
     // Spawn enemies periodically
     if (Math.random() < 0.02) {
@@ -263,28 +320,20 @@ function update() {
     // Update score
     score = Math.floor((currentTime - startTime) / 1000);
 
-    // Handle speed boost duration
-    if (player.speedBoostActive && (currentTime - player.speedBoostTimer) >= player.speedBoostDuration) {
-        player.speedBoostActive = false;
-        player.speed = player.speedBase;
-    }
-
-    // Update shockwaves
-    updateShockwaves(deltaTime);
+    // Update flash effect
+    updateFlash(deltaTime);
 }
 
+// Function to draw game elements
 function draw() {
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
 
-    // Draw shockwaves
-    shockwaves.forEach((shockwave) => {
-        ctx.beginPath();
-        ctx.arc(shockwave.x, shockwave.y, shockwave.radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(0, 150, 255, ${shockwave.opacity})`;
-        ctx.lineWidth = 3;
-        ctx.stroke();
-    });
+    // Draw flash effect if active
+    if (flash.active) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${flash.opacity})`;
+        ctx.fillRect(0, 0, width, height);
+    }
 
     // Draw player
     ctx.fillStyle = '#0f0';
@@ -319,12 +368,33 @@ function draw() {
     }
 }
 
+// Function to handle the game loop
 function loop() {
     update();
     draw();
     if (!gameOver) {
         requestAnimationFrame(loop);
     }
+}
+
+// Function to reset the game
+function resetGame() {
+    gameOver = false;
+    score = 0;
+    startTime = Date.now();
+    player.x = width / 2;
+    player.y = height / 2;
+    enemies.length = 0;
+    flash.active = false;
+    flash.opacity = 0;
+    lastComboTime = 0;
+    mouseMovement = { x: 0, y: 0 };
+    // Request pointer lock again if not locked
+    if (!isPointerLocked) {
+        canvas.requestPointerLock();
+    }
+    lastUpdateTime = Date.now();
+    loop();
 }
 
 // Restart the game when Enter is pressed or canvas is clicked after game over
@@ -341,26 +411,6 @@ canvas.addEventListener('click', function() {
         canvas.requestPointerLock();
     }
 });
-
-function resetGame() {
-    gameOver = false;
-    score = 0;
-    startTime = Date.now();
-    player.x = width / 2;
-    player.y = height / 2;
-    enemies.length = 0;
-    shockwaves.length = 0;
-    player.speed = player.speedBase;
-    player.speedBoostActive = false;
-    player.speedBoostTimer = 0;
-    player.speedBoostLastUsed = Date.now() - player.speedBoostCooldown;
-    // Request pointer lock again if not locked
-    if (!isPointerLocked) {
-        canvas.requestPointerLock();
-    }
-    lastUpdateTime = Date.now();
-    loop();
-}
 
 // Start the game loop
 loop();
