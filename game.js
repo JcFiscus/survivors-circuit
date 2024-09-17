@@ -5,6 +5,10 @@ const ctx = canvas.getContext('2d');
 let width = window.innerWidth;
 let height = window.innerHeight;
 
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
 // Set canvas to full screen
 function resizeCanvas() {
     canvas.width = window.innerWidth;
@@ -12,9 +16,6 @@ function resizeCanvas() {
     width = canvas.width;
     height = canvas.height;
 }
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
-
 let gameOver = false;
 let score = 0;
 let startTime = Date.now();
