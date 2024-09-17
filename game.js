@@ -5,6 +5,8 @@ const ctx = canvas.getContext('2d');
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    width = canvas.width;
+    height = canvas.height;
 }
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
@@ -16,6 +18,22 @@ let gameOver = false;
 let score = 0;
 let startTime = Date.now();
 
+// Starfield
+const stars = [];
+const numStars = 100;
+
+// Initialize stars
+for (let i = 0; i < numStars; i++) {
+    stars.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        radius: Math.random() * 1.5,
+        alpha: Math.random(),
+        twinkleSpeed: Math.random() * 0.02 + 0.01
+    });
+}
+
+// Player (Spacecraft)
 const player = {
     x: width / 2,
     y: height / 2,
@@ -25,13 +43,34 @@ const player = {
     vy: 0,
     lastVx: 0,
     lastVy: 0,
+    // Drawing the spacecraft using paths
+    draw: function() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.scale(this.size / 20, this.size / 20);
+        ctx.fillStyle = '#00FF00'; // Bright green for contrast
+        ctx.beginPath();
+        // Simple triangular spacecraft
+        ctx.moveTo(0, -10);
+        ctx.lineTo(5, 10);
+        ctx.lineTo(-5, 10);
+        ctx.closePath();
+        ctx.fill();
+
+        // Drawing the cockpit
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(0, -5, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
 };
 
 const enemies = [];
-
-const keys = {};
+const enemySize = 15;
 
 // Handle keyboard input
+const keys = {};
 document.addEventListener('keydown', function(e) {
     keys[e.key] = true;
 });
@@ -78,50 +117,173 @@ function updateMousePosition(e) {
     mouseDy += e.movementY;
 }
 
-// Function to spawn enemies
-function spawnEnemy() {
-    const enemySize = 20;
-    const enemySpeed = 1 + Math.random() * 2;
+// Explosion Effects
+const explosions = [];
 
-    // Spawn at random edge
-    let x, y;
-    const edge = Math.floor(Math.random() * 4);
-    if (edge === 0) {
-        // Top
-        x = Math.random() * width;
-        y = -enemySize;
-    } else if (edge === 1) {
-        // Bottom
-        x = Math.random() * width;
-        y = height + enemySize;
-    } else if (edge === 2) {
-        // Left
-        x = -enemySize;
-        y = Math.random() * height;
-    } else {
-        // Right
-        x = width + enemySize;
-        y = Math.random() * height;
+// Explosion class
+class Explosion {
+    constructor(x, y, type) {
+        this.x = x;
+        this.y = y;
+        this.particles = [];
+        this.type = type; // 'speed' or 'whiplash'
+        this.init();
     }
 
-    enemies.push({
-        x: x,
-        y: y,
-        size: enemySize,
-        speed: enemySpeed,
-    });
+    init() {
+        const numParticles = this.type === 'speed' ? 20 : 30;
+        for (let i = 0; i < numParticles; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * (this.type === 'speed' ? 3 : 5);
+            this.particles.push({
+                x: this.x,
+                y: this.y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                radius: Math.random() * 3 + 2,
+                alpha: 1,
+                decay: Math.random() * 0.02 + 0.01,
+                color: this.type === 'speed' ? '#FFD700' : '#FF4500' // Gold or OrangeRed
+            });
+        }
+    }
+
+    update() {
+        this.particles.forEach(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.alpha -= p.decay;
+        });
+        // Remove particles that are fully faded
+        this.particles = this.particles.filter(p => p.alpha > 0);
+    }
+
+    draw() {
+        this.particles.forEach(p => {
+            ctx.save();
+            ctx.globalAlpha = p.alpha;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        });
+    }
+
+    isDone() {
+        return this.particles.length === 0;
+    }
 }
 
-// Variables for detecting high speed or rapid direction change
-let comboActive = false;
+function spawnEnemy() {
+    const enemy = {
+        x: 0,
+        y: 0,
+        size: enemySize,
+        speed: 2 + Math.random() * 2, // Speed between 2 and 4
+        // Randomly spawn at edges
+        spawn: function() {
+            const edge = Math.floor(Math.random() * 4);
+            if (edge === 0) { // Top
+                this.x = Math.random() * width;
+                this.y = -this.size;
+            } else if (edge === 1) { // Bottom
+                this.x = Math.random() * width;
+                this.y = height + this.size;
+            } else if (edge === 2) { // Left
+                this.x = -this.size;
+                this.y = Math.random() * height;
+            } else { // Right
+                this.x = width + this.size;
+                this.y = Math.random() * height;
+            }
+        },
+        draw: function() {
+            ctx.fillStyle = '#FF0000'; // Bright red for contrast
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size / 2, 0, Math.PI * 2);
+            ctx.fill();
+        },
+        update: function() {
+            const dx = player.x - this.x;
+            const dy = player.y - this.y;
+            const angle = Math.atan2(dy, dx);
+            this.x += Math.cos(angle) * this.speed;
+            this.y += Math.sin(angle) * this.speed;
+        }
+    };
+    enemy.spawn();
+    enemies.push(enemy);
+}
+
+// Combo Mechanic Variables
 let comboCooldown = 1000; // 1 second cooldown
 let lastComboTime = 0;
 
+// Function to trigger the combo effect
+function triggerCombo(type) {
+    // type can be 'speed' or 'whiplash'
+    // Create explosion effect
+    explosions.push(new Explosion(player.x, player.y, type));
+
+    // Destroy enemies within proximity
+    const proximityRadius = 100;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+        if (dist <= proximityRadius) {
+            enemies.splice(i, 1); // Destroy the enemy
+        }
+    }
+}
+
+// Flash effect variables
+let flash = { active: false, opacity: 0 };
+
+// Function to create a flash effect
+function flashScreen() {
+    flash.active = true;
+    flash.opacity = 0.3; // Initial opacity
+}
+
+// Function to update flash effect
+function updateFlash(deltaTime) {
+    if (flash.active) {
+        flash.opacity -= 0.01 * (deltaTime / 16); // Adjust fade speed as needed
+        if (flash.opacity <= 0) {
+            flash.active = false;
+            flash.opacity = 0;
+        }
+    }
+}
+
+// Function to draw stars
+function drawStars() {
+    stars.forEach(star => {
+        star.alpha += star.twinkleSpeed;
+        if (star.alpha >= 1) star.alpha = 0;
+        if (star.alpha <= 0) star.alpha = 1;
+        ctx.save();
+        ctx.globalAlpha = star.alpha;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    });
+}
+
 // Function to update game state
+let lastUpdateTime = Date.now();
+
 function update() {
     if (gameOver) {
         return;
     }
+
+    const currentTime = Date.now();
+    const deltaTime = currentTime - lastUpdateTime;
+    lastUpdateTime = currentTime;
 
     // Store previous velocities
     player.lastVx = player.vx;
@@ -131,7 +293,7 @@ function update() {
     player.vx = 0;
     player.vy = 0;
 
-    // Update player position based on keyboard input
+    // Update player velocity based on keyboard input
     let keyboardDx = 0;
     let keyboardDy = 0;
 
@@ -184,24 +346,27 @@ function update() {
 
     // Detect high speed or rapid direction change (whiplash)
     let currentSpeed = Math.hypot(player.vx, player.vy);
-    let speedThreshold = 7; // Threshold speed to trigger effect
+    let speedThreshold = 10; // Threshold speed to trigger 'speed' combo
 
-    let directionChange = Math.acos(
-        (player.vx * player.lastVx + player.vy * player.lastVy) /
-        (Math.hypot(player.vx, player.vy) * Math.hypot(player.lastVx, player.lastVy) || 1)
-    );
+    let directionChange = 0;
+    if (player.lastVx !== 0 || player.lastVy !== 0) {
+        const dotProduct = (player.vx * player.lastVx + player.vy * player.lastVy) /
+            (Math.hypot(player.vx, player.vy) * Math.hypot(player.lastVx, player.lastVy) || 1);
+        directionChange = Math.acos(Math.min(Math.max(dotProduct, -1), 1)); // Clamp value between -1 and 1
+    }
 
     let directionChangeThreshold = Math.PI / 2; // 90 degrees
 
-    let currentTime = Date.now();
-
     if ((currentSpeed >= speedThreshold || directionChange >= directionChangeThreshold) &&
         (currentTime - lastComboTime) >= comboCooldown) {
-        // Trigger the effect
-        destroyNearbyEnemies();
+        if (currentSpeed >= speedThreshold) {
+            // High-speed synchronization
+            triggerCombo('speed');
+        } else {
+            // Whiplash (rapid direction change)
+            triggerCombo('whiplash');
+        }
         lastComboTime = currentTime;
-
-        // Visual Feedback
         flashScreen();
     }
 
@@ -211,56 +376,35 @@ function update() {
     }
 
     // Update enemies
-    enemies.forEach((enemy, index) => {
-        // Move enemy towards player
-        const dx = player.x - enemy.x;
-        const dy = player.y - enemy.y;
-        const angle = Math.atan2(dy, dx);
-        enemy.x += Math.cos(angle) * enemy.speed;
-        enemy.y += Math.sin(angle) * enemy.speed;
+    enemies.forEach(enemy => {
+        enemy.update();
+    });
 
-        // Check collision with player
+    // Check for collisions
+    enemies.forEach(enemy => {
         const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
         if (dist < (player.size / 2 + enemy.size / 2)) {
             gameOver = true;
         }
     });
 
-    // Update score
-    score = Math.floor((Date.now() - startTime) / 1000);
+    // Update explosions
+    explosions.forEach(explosion => {
+        explosion.update();
+    });
+
+    // Remove completed explosions
+    for (let i = explosions.length - 1; i >= 0; i--) {
+        if (explosions[i].isDone()) {
+            explosions.splice(i, 1);
+        }
+    }
 
     // Update flash effect
-    updateFlash();
-}
+    updateFlash(deltaTime);
 
-// Function to destroy nearby enemies
-function destroyNearbyEnemies() {
-    const proximityRadius = 100;
-    for (let i = enemies.length - 1; i >= 0; i--) {
-        const enemy = enemies[i];
-        const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
-        if (dist <= proximityRadius) {
-            enemies.splice(i, 1); // Destroy the enemy
-        }
-    }
-}
-
-// Flash effect variables
-let flash = { active: false, opacity: 0 };
-
-function flashScreen() {
-    flash.active = true;
-    flash.opacity = 0.5; // Initial opacity
-}
-
-function updateFlash() {
-    if (flash.active) {
-        flash.opacity -= 0.05;
-        if (flash.opacity <= 0) {
-            flash.active = false;
-            flash.opacity = 0;
-        }
-    }
+    // Update score
+    score = Math.floor((currentTime - startTime) / 1000);
 }
 
 // Function to draw game elements
@@ -268,36 +412,38 @@ function draw() {
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
 
+    // Draw stars
+    drawStars();
+
+    // Draw explosions
+    explosions.forEach(explosion => {
+        explosion.draw();
+    });
+
     // Draw flash effect if active
     if (flash.active) {
         ctx.fillStyle = `rgba(255, 255, 255, ${flash.opacity})`;
         ctx.fillRect(0, 0, width, height);
     }
 
-    // Draw player
-    ctx.fillStyle = '#0f0';
-    ctx.beginPath();
-    ctx.arc(player.x, player.y, player.size / 2, 0, Math.PI * 2);
-    ctx.fill();
+    // Draw player (spacecraft)
+    player.draw();
 
     // Draw enemies
-    ctx.fillStyle = '#f00';
-    enemies.forEach((enemy) => {
-        ctx.beginPath();
-        ctx.arc(enemy.x, enemy.y, enemy.size / 2, 0, Math.PI * 2);
-        ctx.fill();
+    enemies.forEach(enemy => {
+        enemy.draw();
     });
 
     // Draw score
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = '#FFFFFF';
     ctx.font = '24px Arial';
     ctx.fillText(`Score: ${score}`, 20, 40);
 
     // Draw game over screen
     if (gameOver) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
         ctx.fillRect(0, 0, width, height);
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = '#FFFFFF';
         ctx.font = '60px Arial';
         ctx.textAlign = 'center';
         ctx.fillText('Game Over', width / 2, height / 2 - 30);
@@ -328,9 +474,14 @@ function resetGame() {
     player.lastVx = 0;
     player.lastVy = 0;
     enemies.length = 0;
+    explosions.length = 0;
     flash.active = false;
     flash.opacity = 0;
     lastComboTime = 0;
+    mouseDx = 0;
+    mouseDy = 0;
+    // Reset stars position if desired
+    // For now, stars remain static
     // Request pointer lock again if not locked
     if (!isPointerLocked) {
         canvas.requestPointerLock();
