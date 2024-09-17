@@ -1,6 +1,10 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+// Initialize width and height before using them
+let width = window.innerWidth;
+let height = window.innerHeight;
+
 // Set canvas to full screen
 function resizeCanvas() {
     canvas.width = window.innerWidth;
@@ -11,16 +15,13 @@ function resizeCanvas() {
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
 
-let width = canvas.width;
-let height = canvas.height;
-
 let gameOver = false;
 let score = 0;
 let startTime = Date.now();
 
 // Starfield
 const stars = [];
-const numStars = 100;
+const numStars = 150;
 
 // Initialize stars
 for (let i = 0; i < numStars; i++) {
@@ -37,7 +38,7 @@ for (let i = 0; i < numStars; i++) {
 const player = {
     x: width / 2,
     y: height / 2,
-    size: 20,
+    size: 30, // Increased size for better visibility
     speed: 5,
     vx: 0,
     vy: 0,
@@ -47,13 +48,13 @@ const player = {
     draw: function() {
         ctx.save();
         ctx.translate(this.x, this.y);
-        ctx.scale(this.size / 20, this.size / 20);
+        ctx.scale(this.size / 30, this.size / 30);
         ctx.fillStyle = '#00FF00'; // Bright green for contrast
         ctx.beginPath();
         // Simple triangular spacecraft
-        ctx.moveTo(0, -10);
-        ctx.lineTo(5, 10);
-        ctx.lineTo(-5, 10);
+        ctx.moveTo(0, -15);
+        ctx.lineTo(10, 10);
+        ctx.lineTo(-10, 10);
         ctx.closePath();
         ctx.fill();
 
@@ -67,7 +68,7 @@ const player = {
 };
 
 const enemies = [];
-const enemySize = 15;
+const enemySize = 20;
 
 // Handle keyboard input
 const keys = {};
@@ -131,7 +132,7 @@ class Explosion {
     }
 
     init() {
-        const numParticles = this.type === 'speed' ? 20 : 30;
+        const numParticles = this.type === 'speed' ? 30 : 40;
         for (let i = 0; i < numParticles; i++) {
             const angle = Math.random() * Math.PI * 2;
             const speed = Math.random() * (this.type === 'speed' ? 3 : 5);
@@ -142,7 +143,7 @@ class Explosion {
                 vy: Math.sin(angle) * speed,
                 radius: Math.random() * 3 + 2,
                 alpha: 1,
-                decay: Math.random() * 0.02 + 0.01,
+                decay: Math.random() * 0.015 + 0.005,
                 color: this.type === 'speed' ? '#FFD700' : '#FF4500' // Gold or OrangeRed
             });
         }
@@ -180,7 +181,7 @@ function spawnEnemy() {
         x: 0,
         y: 0,
         size: enemySize,
-        speed: 2 + Math.random() * 2, // Speed between 2 and 4
+        speed: 2 + Math.random() * 3, // Speed between 2 and 5
         // Randomly spawn at edges
         spawn: function() {
             const edge = Math.floor(Math.random() * 4);
@@ -227,7 +228,7 @@ function triggerCombo(type) {
     explosions.push(new Explosion(player.x, player.y, type));
 
     // Destroy enemies within proximity
-    const proximityRadius = 100;
+    const proximityRadius = 120;
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
         const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
@@ -371,7 +372,7 @@ function update() {
     }
 
     // Spawn enemies periodically
-    if (Math.random() < 0.02) {
+    if (Math.random() < 0.02) { // Approximately 1 enemy per 50 frames
         spawnEnemy();
     }
 
