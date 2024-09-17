@@ -20,12 +20,17 @@ const player = {
     x: width / 2,
     y: height / 2,
     size: 20,
-    speed: 5,
-    velX: 0,
-    velY: 0,
+    speedBase: 5, // Original speed
+    speed: 5, // Current speed (can be boosted)
+    speedBoostActive: false,
+    speedBoostDuration: 2000, // Duration in ms
+    speedBoostCooldown: 5000, // Cooldown in ms
+    speedBoostTimer: 0,
+    speedBoostLastUsed: -5000, // Initialize to allow immediate use
 };
 
 const enemies = [];
+const shockwaves = []; // Array to hold active shockwaves
 
 const keys = {};
 
@@ -70,7 +75,9 @@ document.exitPointerLock = document.exitPointerLock || document.mozExitPointerLo
 
 // Click to lock the pointer
 canvas.addEventListener('click', function() {
-    canvas.requestPointerLock();
+    if (!gameOver) {
+        canvas.requestPointerLock();
+    }
 });
 
 // Listen for pointer lock change
@@ -96,8 +103,8 @@ let mouseSensitivity = 0.1;
 
 function updateMousePosition(e) {
     // Move player based on mouse movement
-    player.x += e.movementX * mouseSensitivity;
-    player.y += e.movementY * mouseSensitivity;
+    player.x += e.movementX * player.speed;
+    player.y += e.movementY * player.speed;
 
     // Keep player within canvas boundaries
     player.x = Math.max(player.size / 2, Math.min(width - player.size / 2, player.x));
@@ -137,23 +144,82 @@ function spawnEnemy() {
     });
 }
 
+function activateSpeedBoost() {
+    const currentTime = Date.now();
+    if (!player.speedBoostActive && (currentTime - player.speedBoostLastUsed) >= player.speedBoostCooldown) {
+        player.speedBoostActive = true;
+        player.speed = player.speedBase * 2; // Double the speed
+        player.speedBoostTimer = currentTime;
+        player.speedBoostLastUsed = currentTime;
+
+        // Create a shockwave effect
+        shockwaves.push({
+            x: player.x,
+            y: player.y,
+            radius: 0,
+            maxRadius: 100,
+            opacity: 0.5,
+        });
+    }
+}
+
+function updateShockwaves(deltaTime) {
+    for (let i = shockwaves.length - 1; i >= 0; i--) {
+        const shockwave = shockwaves[i];
+        shockwave.radius += 100 * (deltaTime / 1000); // Expand at 100 pixels per second
+        shockwave.opacity -= 0.5 * (deltaTime / 1000); // Fade out over time
+
+        if (shockwave.radius >= shockwave.maxRadius || shockwave.opacity <= 0) {
+            shockwaves.splice(i, 1); // Remove shockwave
+        }
+    }
+}
+
+let lastUpdateTime = Date.now();
+
 function update() {
     if (gameOver) {
         return;
     }
 
+    const currentTime = Date.now();
+    const deltaTime = currentTime - lastUpdateTime;
+    lastUpdateTime = currentTime;
+
     // Update player position based on keyboard input
+    let movingWithKeyboard = false;
+    let keyboardDirection = { x: 0, y: 0 };
+
     if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
-        player.x -= player.speed;
+        keyboardDirection.x -= 1;
+        movingWithKeyboard = true;
     }
     if (keys['ArrowRight'] || keys['d'] || keys['D']) {
-        player.x += player.speed;
+        keyboardDirection.x += 1;
+        movingWithKeyboard = true;
     }
     if (keys['ArrowUp'] || keys['w'] || keys['W']) {
-        player.y -= player.speed;
+        keyboardDirection.y -= 1;
+        movingWithKeyboard = true;
     }
     if (keys['ArrowDown'] || keys['s'] || keys['S']) {
-        player.y += player.speed;
+        keyboardDirection.y += 1;
+        movingWithKeyboard = true;
+    }
+
+    // Normalize direction
+    if (keyboardDirection.x !== 0 || keyboardDirection.y !== 0) {
+        const length = Math.hypot(keyboardDirection.x, keyboardDirection.y);
+        keyboardDirection.x /= length;
+        keyboardDirection.y /= length;
+
+        player.x += keyboardDirection.x * player.speed;
+        player.y += keyboardDirection.y * player.speed;
+
+        // Detect if both keyboard and mouse are used simultaneously
+        if (isPointerLocked && movingWithKeyboard) {
+            activateSpeedBoost();
+        }
     }
 
     // Keep player within canvas boundaries
@@ -195,12 +261,30 @@ function update() {
     });
 
     // Update score
-    score = Math.floor((Date.now() - startTime) / 1000);
+    score = Math.floor((currentTime - startTime) / 1000);
+
+    // Handle speed boost duration
+    if (player.speedBoostActive && (currentTime - player.speedBoostTimer) >= player.speedBoostDuration) {
+        player.speedBoostActive = false;
+        player.speed = player.speedBase;
+    }
+
+    // Update shockwaves
+    updateShockwaves(deltaTime);
 }
 
 function draw() {
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
+
+    // Draw shockwaves
+    shockwaves.forEach((shockwave) => {
+        ctx.beginPath();
+        ctx.arc(shockwave.x, shockwave.y, shockwave.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0, 150, 255, ${shockwave.opacity})`;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    });
 
     // Draw player
     ctx.fillStyle = '#0f0';
@@ -265,10 +349,16 @@ function resetGame() {
     player.x = width / 2;
     player.y = height / 2;
     enemies.length = 0;
+    shockwaves.length = 0;
+    player.speed = player.speedBase;
+    player.speedBoostActive = false;
+    player.speedBoostTimer = 0;
+    player.speedBoostLastUsed = Date.now() - player.speedBoostCooldown;
     // Request pointer lock again if not locked
     if (!isPointerLocked) {
         canvas.requestPointerLock();
     }
+    lastUpdateTime = Date.now();
     loop();
 }
 
