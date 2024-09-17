@@ -18,6 +18,6 @@ body, html {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: #111;
+    background-color: #000; /* Black background for space */
     cursor: none; /* Hide the cursor when not locked */
 }
