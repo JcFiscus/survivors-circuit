@@ -1,8 +1,16 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-const width = canvas.width;
-const height = canvas.height;
+// Set canvas to full screen
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+let width = canvas.width;
+let height = canvas.height;
 
 let gameOver = false;
 let score = 0;
@@ -13,6 +21,8 @@ const player = {
     y: height / 2,
     size: 20,
     speed: 5,
+    velX: 0,
+    velY: 0,
 };
 
 const enemies = [];
@@ -54,6 +64,46 @@ canvas.addEventListener('touchend', function(e) {
     e.preventDefault();
 });
 
+// Pointer Lock Setup
+canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
+document.exitPointerLock = document.exitPointerLock || document.mozExitPointerLock;
+
+// Click to lock the pointer
+canvas.addEventListener('click', function() {
+    canvas.requestPointerLock();
+});
+
+// Listen for pointer lock change
+document.addEventListener('pointerlockchange', lockChangeAlert, false);
+document.addEventListener('mozpointerlockchange', lockChangeAlert, false);
+
+let isPointerLocked = false;
+
+function lockChangeAlert() {
+    if (document.pointerLockElement === canvas ||
+        document.mozPointerLockElement === canvas) {
+        console.log('Pointer locked');
+        document.addEventListener("mousemove", updateMousePosition, false);
+        isPointerLocked = true;
+    } else {
+        console.log('Pointer unlocked');
+        document.removeEventListener("mousemove", updateMousePosition, false);
+        isPointerLocked = false;
+    }
+}
+
+let mouseSensitivity = 0.1;
+
+function updateMousePosition(e) {
+    // Move player based on mouse movement
+    player.x += e.movementX * mouseSensitivity;
+    player.y += e.movementY * mouseSensitivity;
+
+    // Keep player within canvas boundaries
+    player.x = Math.max(player.size / 2, Math.min(width - player.size / 2, player.x));
+    player.y = Math.max(player.size / 2, Math.min(height - player.size / 2, player.y));
+}
+
 function spawnEnemy() {
     const enemySize = 20;
     const enemySpeed = 1 + Math.random() * 2;
@@ -93,16 +143,16 @@ function update() {
     }
 
     // Update player position based on keyboard input
-    if (keys['ArrowLeft'] || keys['a']) {
+    if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
         player.x -= player.speed;
     }
-    if (keys['ArrowRight'] || keys['d']) {
+    if (keys['ArrowRight'] || keys['d'] || keys['D']) {
         player.x += player.speed;
     }
-    if (keys['ArrowUp'] || keys['w']) {
+    if (keys['ArrowUp'] || keys['w'] || keys['W']) {
         player.y -= player.speed;
     }
-    if (keys['ArrowDown'] || keys['s']) {
+    if (keys['ArrowDown'] || keys['s'] || keys['S']) {
         player.y += player.speed;
     }
 
@@ -117,6 +167,10 @@ function update() {
         const angle = Math.atan2(dy, dx);
         player.x += Math.cos(angle) * player.speed;
         player.y += Math.sin(angle) * player.speed;
+
+        // Keep player within canvas boundaries
+        player.x = Math.max(player.size / 2, Math.min(width - player.size / 2, player.x));
+        player.y = Math.max(player.size / 2, Math.min(height - player.size / 2, player.y));
     }
 
     // Spawn enemies periodically
@@ -164,20 +218,20 @@ function draw() {
 
     // Draw score
     ctx.fillStyle = '#fff';
-    ctx.font = '20px Arial';
-    ctx.fillText(`Score: ${score}`, 10, 30);
+    ctx.font = '24px Arial';
+    ctx.fillText(`Score: ${score}`, 20, 40);
 
     // Draw game over screen
     if (gameOver) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         ctx.fillRect(0, 0, width, height);
         ctx.fillStyle = '#fff';
-        ctx.font = '48px Arial';
+        ctx.font = '60px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Game Over', width / 2, height / 2 - 20);
-        ctx.font = '24px Arial';
+        ctx.fillText('Game Over', width / 2, height / 2 - 30);
+        ctx.font = '30px Arial';
         ctx.fillText(`Your Score: ${score}`, width / 2, height / 2 + 20);
-        ctx.fillText('Press Enter to Restart', width / 2, height / 2 + 60);
+        ctx.fillText('Click to Restart', width / 2, height / 2 + 60);
     }
 }
 
@@ -189,10 +243,18 @@ function loop() {
     }
 }
 
-// Restart the game when Enter is pressed
+// Restart the game when Enter is pressed or canvas is clicked after game over
 document.addEventListener('keydown', function(e) {
     if (gameOver && e.key === 'Enter') {
         resetGame();
+    }
+});
+
+canvas.addEventListener('click', function() {
+    if (gameOver) {
+        resetGame();
+    } else if (!isPointerLocked) {
+        canvas.requestPointerLock();
     }
 });
 
@@ -203,6 +265,10 @@ function resetGame() {
     player.x = width / 2;
     player.y = height / 2;
     enemies.length = 0;
+    // Request pointer lock again if not locked
+    if (!isPointerLocked) {
+        canvas.requestPointerLock();
+    }
     loop();
 }
 
