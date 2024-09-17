@@ -21,6 +21,10 @@ const player = {
     y: height / 2,
     size: 20,
     speed: 5,
+    vx: 0,
+    vy: 0,
+    lastVx: 0,
+    lastVy: 0,
 };
 
 const enemies = [];
@@ -34,32 +38,6 @@ document.addEventListener('keydown', function(e) {
 
 document.addEventListener('keyup', function(e) {
     keys[e.key] = false;
-});
-
-// Handle touch input for mobile devices
-let touchX = null;
-let touchY = null;
-
-canvas.addEventListener('touchstart', function(e) {
-    const touch = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    touchX = touch.clientX - rect.left;
-    touchY = touch.clientY - rect.top;
-    e.preventDefault();
-});
-
-canvas.addEventListener('touchmove', function(e) {
-    const touch = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    touchX = touch.clientX - rect.left;
-    touchY = touch.clientY - rect.top;
-    e.preventDefault();
-});
-
-canvas.addEventListener('touchend', function(e) {
-    touchX = null;
-    touchY = null;
-    e.preventDefault();
 });
 
 // Pointer Lock Setup
@@ -92,12 +70,12 @@ function lockChangeAlert() {
     }
 }
 
-let mouseMovement = { x: 0, y: 0 };
+let mouseDx = 0;
+let mouseDy = 0;
 
 function updateMousePosition(e) {
-    // Accumulate mouse movement
-    mouseMovement.x += e.movementX;
-    mouseMovement.y += e.movementY;
+    mouseDx += e.movementX;
+    mouseDy += e.movementY;
 }
 
 // Function to spawn enemies
@@ -134,167 +112,98 @@ function spawnEnemy() {
     });
 }
 
-// Combo Mechanic Variables
-let comboCooldown = 2000; // 2 seconds cooldown
+// Variables for detecting high speed or rapid direction change
+let comboActive = false;
+let comboCooldown = 1000; // 1 second cooldown
 let lastComboTime = 0;
 
-// Function to trigger combo effect
-function triggerCombo() {
-    const currentTime = Date.now();
-    if ((currentTime - lastComboTime) < comboCooldown) {
-        return; // Combo is on cooldown
-    }
-
-    // Determine the direction based on combined mouse and keyboard inputs
-    let keyboardDirection = { x: 0, y: 0 };
-    if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
-        keyboardDirection.x -= 1;
-    }
-    if (keys['ArrowRight'] || keys['d'] || keys['D']) {
-        keyboardDirection.x += 1;
-    }
-    if (keys['ArrowUp'] || keys['w'] || keys['W']) {
-        keyboardDirection.y -= 1;
-    }
-    if (keys['ArrowDown'] || keys['s'] || keys['S']) {
-        keyboardDirection.y += 1;
-    }
-
-    // Normalize keyboard direction
-    let keyboardLength = Math.hypot(keyboardDirection.x, keyboardDirection.y);
-    if (keyboardLength > 0) {
-        keyboardDirection.x /= keyboardLength;
-        keyboardDirection.y /= keyboardLength;
-    }
-
-    // Determine mouse direction
-    let mouseDirection = { x: 0, y: 0 };
-    if (mouseMovement.x !== 0 || mouseMovement.y !== 0) {
-        let mouseLength = Math.hypot(mouseMovement.x, mouseMovement.y);
-        mouseDirection.x = mouseMovement.x / mouseLength;
-        mouseDirection.y = mouseMovement.y / mouseLength;
-    }
-
-    // Calculate the angle between keyboard and mouse directions
-    let dotProduct = (keyboardDirection.x * mouseDirection.x) + (keyboardDirection.y * mouseDirection.y);
-    let angle = Math.acos(dotProduct > 1 ? 1 : (dotProduct < -1 ? -1 : dotProduct));
-
-    const angleThreshold = Math.PI / 4; // 45 degrees
-
-    if (angle < angleThreshold) {
-        // Directions are similar; trigger combo
-        lastComboTime = currentTime;
-
-        // Find and remove enemies within proximity
-        const proximityRadius = 100;
-        for (let i = enemies.length - 1; i >= 0; i--) {
-            const enemy = enemies[i];
-            const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
-            if (dist <= proximityRadius) {
-                enemies.splice(i, 1); // Destroy the enemy
-            } else {
-                // Push back the enemy
-                const pushDistance = 20;
-                const angleToPlayer = Math.atan2(enemy.y - player.y, enemy.x - player.x);
-                enemy.x += Math.cos(angleToPlayer) * pushDistance;
-                enemy.y += Math.sin(angleToPlayer) * pushDistance;
-
-                // Ensure enemies stay within bounds
-                enemy.x = Math.max(enemy.size / 2, Math.min(width - enemy.size / 2, enemy.x));
-                enemy.y = Math.max(enemy.size / 2, Math.min(height - enemy.size / 2, enemy.y));
-            }
-        }
-
-        // Visual Feedback (optional): Flash the screen or show an effect
-        // Here, we'll create a brief flash effect
-        flashScreen();
-    }
-
-    // Reset mouse movement after checking
-    mouseMovement.x = 0;
-    mouseMovement.y = 0;
-}
-
-// Function to create a flash effect upon combo
-let flash = { active: false, opacity: 0 };
-
-function flashScreen() {
-    flash.active = true;
-    flash.opacity = 0.5; // Initial opacity
-}
-
-function updateFlash(deltaTime) {
-    if (flash.active) {
-        flash.opacity -= 1 * (deltaTime / 1000); // Fade out over 0.5 seconds
-        if (flash.opacity <= 0) {
-            flash.active = false;
-            flash.opacity = 0;
-        }
-    }
-}
-
 // Function to update game state
-let lastUpdateTime = Date.now();
-
 function update() {
     if (gameOver) {
         return;
     }
 
-    const currentTime = Date.now();
-    const deltaTime = currentTime - lastUpdateTime;
-    lastUpdateTime = currentTime;
+    // Store previous velocities
+    player.lastVx = player.vx;
+    player.lastVy = player.vy;
+
+    // Reset velocities
+    player.vx = 0;
+    player.vy = 0;
 
     // Update player position based on keyboard input
-    let keyboardDirection = { x: 0, y: 0 };
+    let keyboardDx = 0;
+    let keyboardDy = 0;
+
     if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
-        keyboardDirection.x -= 1;
+        keyboardDx -= 1;
     }
     if (keys['ArrowRight'] || keys['d'] || keys['D']) {
-        keyboardDirection.x += 1;
+        keyboardDx += 1;
     }
     if (keys['ArrowUp'] || keys['w'] || keys['W']) {
-        keyboardDirection.y -= 1;
+        keyboardDy -= 1;
     }
     if (keys['ArrowDown'] || keys['s'] || keys['S']) {
-        keyboardDirection.y += 1;
+        keyboardDy += 1;
     }
 
-    // Normalize keyboard direction
-    let length = Math.hypot(keyboardDirection.x, keyboardDirection.y);
-    if (length > 0) {
-        keyboardDirection.x /= length;
-        keyboardDirection.y /= length;
-
-        player.x += keyboardDirection.x * player.speed;
-        player.y += keyboardDirection.y * player.speed;
+    // Normalize keyboard input
+    let keyboardLength = Math.hypot(keyboardDx, keyboardDy);
+    if (keyboardLength > 0) {
+        keyboardDx /= keyboardLength;
+        keyboardDy /= keyboardLength;
     }
+
+    // Update player velocity based on keyboard input
+    player.vx += keyboardDx * player.speed;
+    player.vy += keyboardDy * player.speed;
+
+    // Update player velocity based on mouse movement
+    if (isPointerLocked) {
+        let mouseLength = Math.hypot(mouseDx, mouseDy);
+        if (mouseLength > 0) {
+            let mouseDirectionX = mouseDx / mouseLength;
+            let mouseDirectionY = mouseDy / mouseLength;
+
+            player.vx += mouseDirectionX * player.speed;
+            player.vy += mouseDirectionY * player.speed;
+        }
+        // Reset mouse deltas
+        mouseDx = 0;
+        mouseDy = 0;
+    }
+
+    // Update player position
+    player.x += player.vx;
+    player.y += player.vy;
 
     // Keep player within canvas boundaries
     player.x = Math.max(player.size / 2, Math.min(width - player.size / 2, player.x));
     player.y = Math.max(player.size / 2, Math.min(height - player.size / 2, player.y));
 
-    // Update player position based on touch input
-    if (touchX !== null && touchY !== null) {
-        const dx = touchX - player.x;
-        const dy = touchY - player.y;
-        const angle = Math.atan2(dy, dx);
-        player.x += Math.cos(angle) * player.speed;
-        player.y += Math.sin(angle) * player.speed;
+    // Detect high speed or rapid direction change (whiplash)
+    let currentSpeed = Math.hypot(player.vx, player.vy);
+    let speedThreshold = 7; // Threshold speed to trigger effect
 
-        // Keep player within canvas boundaries
-        player.x = Math.max(player.size / 2, Math.min(width - player.size / 2, player.x));
-        player.y = Math.max(player.size / 2, Math.min(height - player.size / 2, player.y));
+    let directionChange = Math.acos(
+        (player.vx * player.lastVx + player.vy * player.lastVy) /
+        (Math.hypot(player.vx, player.vy) * Math.hypot(player.lastVx, player.lastVy) || 1)
+    );
+
+    let directionChangeThreshold = Math.PI / 2; // 90 degrees
+
+    let currentTime = Date.now();
+
+    if ((currentSpeed >= speedThreshold || directionChange >= directionChangeThreshold) &&
+        (currentTime - lastComboTime) >= comboCooldown) {
+        // Trigger the effect
+        destroyNearbyEnemies();
+        lastComboTime = currentTime;
+
+        // Visual Feedback
+        flashScreen();
     }
-
-    // Move player based on mouse movement
-    if (isPointerLocked) {
-        // Mouse movement is already handled in the updateMousePosition function
-        // Player position has been updated accordingly
-    }
-
-    // Detect and trigger combo
-    triggerCombo();
 
     // Spawn enemies periodically
     if (Math.random() < 0.02) {
@@ -318,10 +227,40 @@ function update() {
     });
 
     // Update score
-    score = Math.floor((currentTime - startTime) / 1000);
+    score = Math.floor((Date.now() - startTime) / 1000);
 
     // Update flash effect
-    updateFlash(deltaTime);
+    updateFlash();
+}
+
+// Function to destroy nearby enemies
+function destroyNearbyEnemies() {
+    const proximityRadius = 100;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+        if (dist <= proximityRadius) {
+            enemies.splice(i, 1); // Destroy the enemy
+        }
+    }
+}
+
+// Flash effect variables
+let flash = { active: false, opacity: 0 };
+
+function flashScreen() {
+    flash.active = true;
+    flash.opacity = 0.5; // Initial opacity
+}
+
+function updateFlash() {
+    if (flash.active) {
+        flash.opacity -= 0.05;
+        if (flash.opacity <= 0) {
+            flash.active = false;
+            flash.opacity = 0;
+        }
+    }
 }
 
 // Function to draw game elements
@@ -384,16 +323,18 @@ function resetGame() {
     startTime = Date.now();
     player.x = width / 2;
     player.y = height / 2;
+    player.vx = 0;
+    player.vy = 0;
+    player.lastVx = 0;
+    player.lastVy = 0;
     enemies.length = 0;
     flash.active = false;
     flash.opacity = 0;
     lastComboTime = 0;
-    mouseMovement = { x: 0, y: 0 };
     // Request pointer lock again if not locked
     if (!isPointerLocked) {
         canvas.requestPointerLock();
     }
-    lastUpdateTime = Date.now();
     loop();
 }
 
